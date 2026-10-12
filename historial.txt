@@ -1,0 +1,6 @@
+ls;1;57
+dir;0;48
+dir build;0;48
+dir ejemplo;1;52
+ls;1;34
+ping -n 11 127.0.0.1;-1;5035

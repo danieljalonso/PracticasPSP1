@@ -1,6 +1,9 @@
 package es.dam.psp.ut1.practicas
 
 import es.dam.psp.ut1.Jvm
+import java.io.File
+import java.util.concurrent.TimeUnit
+
 // Necesitarás además: import java.io.File y import java.util.concurrent.TimeUnit
 
 /**
@@ -29,23 +32,31 @@ fun main() {
         if (orden == "salir") break
         if (orden.isEmpty()) continue
 
-        // TODO 3.c (preparación): construye el ProcessBuilder con Jvm.comandoShell(orden) y
-        //         redirectErrorStream(true). Problema: si lees la salida con readLines() y el hijo no
-        //         termina nunca, el padre se queda bloqueado leyendo y el timeout no llega a comprobarse
-        //         (apuntes, apartado 6.2). Solución sin hilos: redirige la salida a un fichero temporal
-        //         (File.createTempFile("lanzador", ".txt") + redirectOutput(...)).
+        val tempFile = File.createTempFile("temp", ".txt")
+        val pb = ProcessBuilder(Jvm.comandoShell(orden)).redirectErrorStream(true).redirectOutput(tempFile)
 
-        // TODO 3.b: arráncalo y mide el tiempo desde start() hasta que termina
-        //           (System.nanoTime() antes y después, o measureTime { }).
+        val inicio = System.nanoTime()
+        val proceso = pb.start()
 
-        // TODO 3.c: espera como máximo TIMEOUT_S segundos (waitFor(TIMEOUT_S, TimeUnit.SECONDS)); si no
-        //           ha terminado, termina también a sus descendientes (descendants()) y luego destroy();
-        //           si sigue vivo, destroyForcibly(). En ese caso el código que guardes será -1.
+        val terminoATiempo = proceso.waitFor(TIMEOUT_S, TimeUnit.SECONDS)
+        if (!terminoATiempo) {
+            println("Se han agotado los $TIMEOUT_S segundos")
+            proceso.descendants().forEach { it.destroy() }
+            proceso.destroy()
+            if (proceso.isAlive) proceso.destroyForcibly()
+        }
 
-        // TODO 3.a: lee el fichero temporal y muestra cada línea numerada. Bórralo después.
+        val ms = (System.nanoTime() - inicio) / 1_000_000
+        val codigoPrograma = if (terminoATiempo) proceso.exitValue() else -1
 
-        // TODO 3.b: muestra "[código X · Y ms]".
-        // TODO 3.d: añade la línea "orden;codigo;milisegundos" a historial.txt (appendText).
+        val lineas = tempFile.readLines()
+
+        lineas.forEachIndexed { i, line -> println("${i + 1} : $line") }
+        tempFile.delete()
+        println("[codigo $codigoPrograma · $ms ms]")
+
+        File("historial.txt").appendText("$orden;$codigoPrograma;$ms\n")
+
     }
     println("Hasta luego")
 }
