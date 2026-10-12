@@ -5,19 +5,8 @@ import java.io.File
 import kotlin.time.measureTime
 
 /**
- * Coordinador.kt · Práctica 4 · proceso PADRE. Completa los TODO 4.a … 4.e (letras de la práctica).
- *
- * Apuntes UT-1, apartados 5.2 (Jvm.proceso), 5.1 (redirectInput), 6 (leer antes de esperar)
- * y 6.3 (lanzar todos y después esperar a todos).
- * Antes: ejecuta practicas/GeneradorDatos.kt para crear datos/ en la raíz del proyecto.
- * Cómo ejecutarlo: triángulo ▶ junto a main, sin argumentos. Cada hijo es practicas/Contador.kt.
- *
- * Reparte los ficheros de datos/ entre procesos hijo Contador, recoge sus resultados
- * y muestra el total. Compara el tiempo en modo secuencial y en modo concurrente.
- * Mejora opcional: añade concurrenteLimitado(ficheros, maximo) y mídelo con 1, 2, 4 y 8.
+ * Resultado que devuelve un hijo para un fichero.
  */
-
-/** Resultado que devuelve un hijo para un fichero. */
 data class Resultado(
     val fichero: String,
     val lineas: Long,
@@ -26,52 +15,162 @@ data class Resultado(
     val masFrecuente: String
 )
 
-const val CLASE_HIJO = "es.dam.psp.ut1.practicas.ContadorKt"   // main de Contador.kt
+const val CLASE_HIJO = "es.dam.psp.ut1.practicas.ContadorKt"
 
 /**
- * Crea y ARRANCA un proceso Contador cuya entrada estándar sea [fichero].
- * Pista: Jvm.proceso(...) y redirectInput(...). Hereda la salida de error del hijo.
+ * TODO 4.a
+ * Crea y arranca un proceso Contador cuya entrada estándar sea el fichero.
  */
 fun lanzarContador(fichero: File): Process {
-    TODO("Práctica 4.a")   // TODO 4.a
+    return Jvm.proceso(CLASE_HIJO)
+        .redirectInput(fichero)
+        .redirectError(ProcessBuilder.Redirect.INHERIT)
+        .start()
 }
 
 /**
- * Lee la línea que ha escrito el hijo, espera a que termine y construye el Resultado.
- * Si el código de salida no es 0, lanza una IllegalStateException con un mensaje claro.
+ * TODO 4.b
+ * Lee el resultado del hijo y comprueba su código de salida.
  */
 fun recogerResultado(fichero: File, hijo: Process): Resultado {
-    TODO("Práctica 4.b")   // TODO 4.b
+    val linea = hijo.inputStream.bufferedReader().use { it.readLine() }
+
+    val codigoSalida = hijo.waitFor()
+
+    if (codigoSalida != 0) {
+        throw IllegalStateException(
+            "El contador del fichero ${fichero.name} terminó con código $codigoSalida"
+        )
+    }
+
+    if (linea == null) {
+        throw IllegalStateException(
+            "El contador del fichero ${fichero.name} no devolvió ningún resultado"
+        )
+    }
+
+    val partes = linea.split(";")
+
+    if (partes.size != 4) {
+        throw IllegalStateException(
+            "Resultado inválido para ${fichero.name}: $linea"
+        )
+    }
+
+    return Resultado(
+        fichero = fichero.name,
+        lineas = partes[0].toLong(),
+        palabras = partes[1].toLong(),
+        caracteres = partes[2].toLong(),
+        masFrecuente = partes[3]
+    )
 }
 
-/** Procesa los ficheros uno detrás de otro: lanzar, esperar, lanzar, esperar... */
+/**
+ * TODO 4.c
+ * Procesa los ficheros uno detrás de otro.
+ */
 fun secuencial(ficheros: List<File>): List<Resultado> {
-    TODO("Práctica 4.c")   // TODO 4.c
+    return ficheros.map { fichero ->
+        val hijo = lanzarContador(fichero)
+        recogerResultado(fichero, hijo)
+    }
 }
 
-/** Lanza TODOS los hijos a la vez y después recoge los resultados. */
+/**
+ * TODO 4.d
+ * Lanza todos los hijos y después recoge sus resultados.
+ */
 fun concurrente(ficheros: List<File>): List<Resultado> {
-    TODO("Práctica 4.d")   // TODO 4.d
+    val hijos = ficheros.map { fichero ->
+        fichero to lanzarContador(fichero)
+    }
+
+    return hijos.map { (fichero, hijo) ->
+        recogerResultado(fichero, hijo)
+    }
 }
 
+/**
+ * TODO 4.e
+ * Muestra los resultados y comprueba que ambos modos coinciden.
+ */
 fun main() {
-    // Ruta relativa: datos/ dentro del directorio de trabajo (la raíz del proyecto en IntelliJ)
-    val ficheros = File("datos").listFiles { f -> f.extension == "txt" }?.sortedBy { it.name }
+    val ficheros = File("datos")
+        .listFiles { f -> f.extension == "txt" }
+        ?.sortedBy { it.name }
+
     if (ficheros.isNullOrEmpty()) {
         println("No hay ficheros en datos/. Ejecuta antes GeneradorDatos.kt")
         return
     }
+
     println("Procesadores disponibles: ${Runtime.getRuntime().availableProcessors()}")
 
-    lateinit var r1: List<Resultado>          // se asignan dentro de measureTime { }
+    lateinit var r1: List<Resultado>
     lateinit var r2: List<Resultado>
-    val t1 = measureTime { r1 = secuencial(ficheros) }
-    val t2 = measureTime { r2 = concurrente(ficheros) }
 
-    // TODO 4.e: muestra una tabla con el resultado de cada fichero y una fila TOTAL
-    //  (líneas, palabras y caracteres sumados). Comprueba que r1 y r2 coinciden.
+    val t1 = measureTime {
+        r1 = secuencial(ficheros)
+    }
 
+    val t2 = measureTime {
+        r2 = concurrente(ficheros)
+    }
+
+    fun mostrarTabla(resultados: List<Resultado>) {
+        println()
+        println(
+            "%-20s %12s %12s %14s %s".format(
+                "FICHERO", "LÍNEAS", "PALABRAS", "CARACTERES", "MÁS FRECUENTE"
+            )
+        )
+        println("-".repeat(85))
+
+        resultados.forEach { r ->
+            println(
+                "%-20s %12d %12d %14d %s".format(
+                    r.fichero,
+                    r.lineas,
+                    r.palabras,
+                    r.caracteres,
+                    r.masFrecuente
+                )
+            )
+        }
+
+        val totalLineas = resultados.sumOf { it.lineas }
+        val totalPalabras = resultados.sumOf { it.palabras }
+        val totalCaracteres = resultados.sumOf { it.caracteres }
+
+        println("-".repeat(85))
+        println(
+            "%-20s %12d %12d %14d".format(
+                "TOTAL",
+                totalLineas,
+                totalPalabras,
+                totalCaracteres
+            )
+        )
+    }
+
+    println("\nRESULTADOS SECUENCIALES")
+    mostrarTabla(r1)
+
+    println("\nRESULTADOS CONCURRENTES")
+    mostrarTabla(r2)
+
+    // Se comparan los resultados de ambos modos.
+    check(r1 == r2) {
+        "ERROR: los resultados secuenciales y concurrentes no coinciden"
+    }
+
+    println("\nCorrecto: ambos modos producen los mismos resultados.")
     println("Secuencial:  $t1")
     println("Concurrente: $t2")
-    // Práctica 4.f: ejecútalo tres veces y calcula la aceleración t1 / t2
+
+    val aceleracion = t1.inWholeNanoseconds.toDouble() /
+            t2.inWholeNanoseconds.toDouble()
+
+    println("Aceleración: %.2fx".format(aceleracion))
 }
